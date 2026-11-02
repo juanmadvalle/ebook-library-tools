@@ -9,3 +9,5 @@ dist/
 *.log
 goodreads_import*.csv
 .ebook-organizer/
+ebook-plan*.json
+demo-library/

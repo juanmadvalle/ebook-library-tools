@@ -4,7 +4,8 @@ import argparse
 import sys
 from pathlib import Path
 
-from .organizer import apply, checked_root, export_csv, plan, restore
+from .organizer import (apply, checked_root, export_csv, inspect_recovery,
+                        load_plan, plan, restore, save_plan)
 
 
 def main(argv=None) -> int:
@@ -15,20 +16,33 @@ def main(argv=None) -> int:
     action.add_argument("--dry-run", action="store_true", help="Preview only (default)")
     action.add_argument("--restore", type=Path, metavar="MANIFEST", help="Restore originals from backups")
     action.add_argument("--export-csv", action="store_true", help="Write a new metadata CSV only")
+    action.add_argument("--save-plan", type=Path, metavar="JSON", help="Save the exact preview without moving books")
+    action.add_argument("--apply-plan", type=Path, metavar="JSON", help="Validate and execute a saved plan")
+    action.add_argument("--status", type=Path, metavar="MANIFEST", help="Diagnose a transaction without changes")
+    parser.add_argument("--raw-csv", action="store_true", help="With --export-csv only: preserve formula-like metadata")
     parser.add_argument("--nested-saga", choices=("last", "concat"), default="last")
     args = parser.parse_args(argv)
+    if args.raw_csv and not args.export_csv:
+        parser.error("--raw-csv requires --export-csv")
     try:
         root = checked_root(args.root)
         if args.restore:
             print(f"Restored {restore(root, args.restore)} originals; organized copies retained.")
+        elif args.status:
+            for item in inspect_recovery(root, args.status):
+                print(f"{item['source'].relative_to(root)}: {item['advice']}; "
+                      f"recorded={item['recorded']}, original={item['original']}, "
+                      f"destination={item['copy']}, backup={item['backup_state']}")
         elif args.export_csv:
-            print(f"Export: {export_csv(root)}")
+            print(f"Export: {export_csv(root, raw=args.raw_csv)}")
         else:
-            moves = plan(root, args.nested_saga)
+            moves = load_plan(root, args.apply_plan) if args.apply_plan else plan(root, args.nested_saga)
             for move in moves:
                 print(f"{move.source.relative_to(root)} -> {move.destination.name}")
             print(f"{len(moves)} files to organize; root-level books remain unchanged.")
-            if args.apply:
+            if args.save_plan:
+                print(f"Saved plan: {save_plan(root, moves, args.save_plan)}")
+            elif args.apply or args.apply_plan:
                 manifest = apply(root, moves)
                 if manifest:
                     print(f"Recovery manifest: {manifest}")
@@ -37,6 +51,6 @@ def main(argv=None) -> int:
         return 0
     except Exception as exc:
         print(f"Error: {exc}", file=sys.stderr)
-        print("If an apply was interrupted, inspect .ebook-organizer/*/manifest.json; backups are retained.",
+        print("If an apply was interrupted, use --status with .ebook-organizer/TRANSACTION/manifest.json; backups are retained.",
               file=sys.stderr)
         return 1
