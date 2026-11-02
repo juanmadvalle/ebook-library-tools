@@ -2,7 +2,7 @@
 
 Organize EPUBs from subfolders into a library root using embedded author/title metadata and the parent folder as a series label. Filenames use `Author-Series-Title.epub`, underscores for spaces, and accent normalization. Multiple authors are preserved; author order is not guessed from commas.
 
-Private repository candidate. No books, reading logs, exports, or compiled executables are included. Python 3.10+; runtime uses only the standard library.
+No books, reading logs, exports, or compiled executables are included. Python 3.10+; runtime uses only the standard library.
 
 ## Run from source
 
