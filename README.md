@@ -39,4 +39,8 @@ Keep the library idle during apply or restore; concurrent writers and malicious 
 
 The old executable is not reused. The old source is preserved outside this repository in the recovery collection. This rewrite removes automatic root renaming, blanket empty-folder deletion, silent copy cleanup, automatic CSV replacement, and double-click mutation. Naming now prefers the embedded title, preserving its capitalization; existing root books are deliberately not migrated.
 
-No executable build is distributed. Reproducible executable packaging and a public license remain future decisions.
+No executable build is distributed. Reproducible executable packaging remains a future decision.
+
+## License
+
+Licensed under the [MIT License](LICENSE).
