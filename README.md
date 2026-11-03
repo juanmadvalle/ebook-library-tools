@@ -13,6 +13,7 @@ $env:PYTHONPATH = "$PWD/src"
 python -m ebook_library_tools --root 'D:/Books'
 python -m ebook_library_tools --root 'D:/Books' --save-plan './ebook-plan-review.json'
 python -m ebook_library_tools --root 'D:/Books' --apply-plan './ebook-plan-review.json'
+python -m ebook_library_tools --root 'D:/Books' --apply-plan './ebook-plan-review.json' --keep-going
 python -m ebook_library_tools --root 'D:/Books' --export-csv
 python -m ebook_library_tools --root 'D:/Books' --status 'D:/Books/.ebook-organizer/TRANSACTION/manifest.json'
 python -m ebook_library_tools --root 'D:/Books' --restore 'D:/Books/.ebook-organizer/TRANSACTION/manifest.json'
@@ -30,9 +31,9 @@ Alternatively, `python -m pip install -e .` installs the `ebook-organizer` comma
 - Both `.epub` and `.EPUB` are discovered. Symbolic links and Windows reparse points are skipped during discovery.
 - Destinations reserve all existing root names, using case-insensitive comparisons. Existing files are never intentionally overwritten; destination creation is exclusive.
 - Each source is backed up under `.ebook-organizer/TRANSACTION/` and verified with SHA-256. The journal is saved before the original is removed. Backups consume approximately the size of processed books and remain until you manually remove them after review.
-- Application stops on the first error. Completed earlier moves remain; this is not an all-or-nothing transaction. The complete plan is recorded before copying starts. Retained backups and manifests support recovery; `--status` diagnoses actual file content after interruptions.
+- Application stops on the first error by default. With `--keep-going` (requires `--apply` or `--apply-plan`) a failing book is recorded with its error in the journal, the remaining books are still processed, failures are printed and the exit code is 1. Either way, completed earlier moves remain; this is not an all-or-nothing transaction. The complete plan is recorded before copying starts. Retained backups and manifests support recovery; `--status` diagnoses actual file content after interruptions.
 - Restore recreates missing originals, refuses conflicting content, and keeps organized destinations and backups. It is a recovery operation, not a destructive rollback.
-- Empty directories are retained. CSV export is separate and writes a unique file instead of overwriting previous exports. Goodreads acceptance of the CSV has not been tested against the service.
+- Empty directories are retained. CSV export is separate and writes a unique file instead of overwriting previous exports. The export is checked after writing against the expected columns (`Title,Author,ISBN13`), a nonempty title and 13-digit ISBNs; an invalid file is kept and reported as an error. Goodreads acceptance of the CSV has not been tested against the service.
 - The ISBN13 column includes only recognized, valid ISBN-13 identifiers; ISBN-10 conversion is not performed.
 - `--nested-saga concat` includes the complete relative folder hierarchy in the filename.
 
