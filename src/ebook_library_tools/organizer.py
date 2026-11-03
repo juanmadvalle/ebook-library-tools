@@ -153,7 +153,8 @@ def load_plan(root: Path, target: Path) -> list[Move]:
     return moves
 
 
-def apply(root: Path, moves: list[Move]) -> Path | None:
+def apply(root: Path, moves: list[Move], keep_going: bool = False) -> Path | None:
+    """Apply moves; with keep_going, record per-book failures and continue."""
     root = checked_root(root)
     if not moves:
         return None
@@ -170,21 +171,33 @@ def apply(root: Path, moves: list[Move]) -> Path | None:
         for i, m in enumerate(moves)]}
     write_journal(journal_path, data)
     for index, move in enumerate(moves):
-        backup = transaction / f"{index}.epub"
-        copy_exclusive(move.source, backup, move.digest)
         entry = data["entries"][index]
-        entry["status"] = "backed_up"
-        write_journal(journal_path, data)
-        copy_exclusive(move.source, move.destination, move.digest)
-        entry["status"] = "copied"
-        write_journal(journal_path, data)
-        # Recheck before deleting. Backups also survive interruption or later failure.
-        if digest(move.source) != move.digest:
-            raise ValueError("Source changed; source and backup retained")
-        move.source.unlink()
-        entry["status"] = "moved"
-        write_journal(journal_path, data)
+        try:
+            backup = transaction / f"{index}.epub"
+            copy_exclusive(move.source, backup, move.digest)
+            entry["status"] = "backed_up"
+            write_journal(journal_path, data)
+            copy_exclusive(move.source, move.destination, move.digest)
+            entry["status"] = "copied"
+            write_journal(journal_path, data)
+            # Recheck before deleting. Backups also survive interruption or later failure.
+            if digest(move.source) != move.digest:
+                raise ValueError("Source changed; source and backup retained")
+            move.source.unlink()
+            entry["status"] = "moved"
+            write_journal(journal_path, data)
+        except Exception as exc:
+            if not keep_going:
+                raise
+            # Keep the last reached step so --status diagnoses real file state.
+            entry["error"] = str(exc)
+            write_journal(journal_path, data)
     return journal_path
+
+
+def failed_entries(manifest: Path) -> list[dict]:
+    """Entries recorded with an error by a keep_going run."""
+    return [e for e in entries(read_record(manifest)) if "error" in e]
 
 
 def recovery_entries(root: Path, manifest: Path) -> list[dict]:
@@ -261,6 +274,27 @@ def restore(root: Path, manifest: Path) -> int:
     return restored
 
 
+GOODREADS_COLUMNS = ["Title", "Author", "ISBN13"]
+
+
+def validate_goodreads_csv(path: Path) -> list[str]:
+    """Return problems against the Goodreads import columns; empty means valid."""
+    problems = []
+    with path.open(encoding="utf-8-sig", newline="") as stream:
+        reader = csv.DictReader(stream)
+        if reader.fieldnames != GOODREADS_COLUMNS:
+            return [f"Unexpected header: {reader.fieldnames}"]
+        for number, row in enumerate(reader, start=2):
+            if None in row or None in row.values():
+                problems.append(f"line {number}: wrong number of columns")
+            elif not row["Title"].strip():
+                problems.append(f"line {number}: empty Title")
+            elif row["ISBN13"] and not (row["ISBN13"].isascii() and row["ISBN13"].isdigit()
+                                        and len(row["ISBN13"]) == 13):
+                problems.append(f"line {number}: ISBN13 must be 13 digits")
+    return problems
+
+
 def spreadsheet_cell(value: str) -> str:
     # Quote leading formula characters, including after whitespace/control chars.
     stripped = value.lstrip(" \t\r\n\v\f\ufeff")
@@ -275,11 +309,14 @@ def export_csv(root: Path, *, raw: bool = False) -> Path:
         row = {"Title": metadata.title or path.stem, "Author": metadata.author, "ISBN13": metadata.isbn}
         rows.append(row if raw else {key: spreadsheet_cell(value) for key, value in row.items()})
     buffer = io.StringIO(newline="")
-    writer = csv.DictWriter(buffer, fieldnames=["Title", "Author", "ISBN13"])
+    writer = csv.DictWriter(buffer, fieldnames=GOODREADS_COLUMNS)
     writer.writeheader()
     writer.writerows(rows)
     # A unique export preserves previous exports even on repeated runs.
     target = root / f"goodreads_import_{uuid4().hex}.csv"
     with target.open("x", newline="", encoding="utf-8-sig") as stream:
         stream.write(buffer.getvalue())
+    problems = validate_goodreads_csv(target)
+    if problems:
+        raise ValueError(f"Export {target.name} kept but invalid: {'; '.join(problems[:5])}")
     return target

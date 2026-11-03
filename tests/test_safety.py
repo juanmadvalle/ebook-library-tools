@@ -179,3 +179,49 @@ class SafetyTests(unittest.TestCase):
         self.assertLessEqual(len(moves[0].destination.name), 175)
         manifest = org.apply(self.root, moves)
         self.assertEqual(org.restore(self.root, manifest), 1)
+
+    def test_keep_going_continues_after_a_failed_book(self):
+        bad = epub(self.root / "Series/a.epub", title="Bad")
+        good = epub(self.root / "Series/b.epub", title="Good")
+        moves = org.plan(self.root)
+        original_unlink = Path.unlink
+
+        def fail_unlink(path, *args, **kwargs):
+            if path == bad:
+                raise PermissionError("simulated locked source")
+            return original_unlink(path, *args, **kwargs)
+
+        with patch.object(Path, "unlink", fail_unlink):
+            manifest = org.apply(self.root, moves, keep_going=True)
+        self.assertTrue(bad.exists())
+        self.assertFalse(good.exists())
+        failed = org.failed_entries(manifest)
+        self.assertEqual([e["source"] for e in failed], ["Series/a.epub"])
+        self.assertEqual(org.restore(self.root, manifest), 1)
+
+    def test_cli_keep_going_reports_failure_exit_code(self):
+        bad = epub(self.root / "Series/a.epub")
+        original_unlink = Path.unlink
+
+        def fail_unlink(path, *args, **kwargs):
+            if path == bad:
+                raise PermissionError("locked")
+            return original_unlink(path, *args, **kwargs)
+
+        with patch.object(Path, "unlink", fail_unlink):
+            self.assertEqual(main(["--root", str(self.root), "--apply", "--keep-going"]), 1)
+            self.assertEqual(main(["--root", str(self.root), "--apply"]), 1)
+        with self.assertRaises(SystemExit):
+            main(["--root", str(self.root), "--keep-going"])
+
+    def test_goodreads_csv_validation(self):
+        epub(self.root / "book.epub")
+        self.assertEqual(org.validate_goodreads_csv(org.export_csv(self.root)), [])
+        bad = self.root / "bad.csv"
+        bad.write_text("Title,Author,ISBN13\n,A,123\nT,A,123\nT,A,9780306406157\n", encoding="utf-8-sig")
+        problems = org.validate_goodreads_csv(bad)
+        self.assertEqual(len(problems), 2)
+        self.assertIn("empty Title", problems[0])
+        self.assertIn("13 digits", problems[1])
+        bad.write_text("Name,Author\nT,A\n", encoding="utf-8-sig")
+        self.assertIn("Unexpected header", org.validate_goodreads_csv(bad)[0])
